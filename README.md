@@ -1,2 +1,35 @@
 # Deep-Video-Representation-Learning-via-V-JEPA-Vision-Joint-Embedding-Predictive-Architecture-
 This repository contains a modular, hardware-efficient PyTorch implementation of Meta's V-JEPA (Video Joint-Embedding Predictive Architecture), inspired by the FAIR 2024 paper "Revisiting Feature Prediction for Learning Visual Representations from Video" by Adrien Bardes et al.
+
+Unlike traditional generative video models that rely on heavy pixel-level autoencoding, or contrastive setups that require negative pairings, V-JEPA learns solely by predicting high-level abstract features in latent space. By masking large continuous spatio-temporal blocks, the architecture forces its encoders to build a mathematical world model capable of understanding video dynamics, motion boundaries, and scene physics.🛠️ Key Architectural Features3D Spatio-Temporal Tokenization (Tubelets): Processes time ($T$) and space ($H \times W$) concurrently via a 3D Convolution layer (nn.Conv3d) rather than flattening individual 2D frame sequences, embedding motion signatures natively from the input layer.Spatio-Temporal Block Masking: Completely conceals $\sim$75% of the video tubelets across space and time. This deliberate blindness prevents the network from taking simple shortcuts (like copying static pixels from adjacent frames).Siamese Configuration & Non-Collapsing Momentum Engine: * A Context Encoder maps the 25% visible tokens.A frozen Target Encoder evaluates the masked target tokens to generate true latent targets. Its parameters are updated via an Exponential Moving Average (EMA) with a strict stop-gradient, completely bypassing representation collapse.Coordinate-Conditioned Latent Predictor: The Transformer predictor reconstructs the full spatio-temporal block pattern by filling missing gaps with learnable [mask] tokens combined with their explicit 3D space-time positional coordinates.Abstract Feature-Space Regression: Employs a robust SmoothL1Loss computed strictly inside the embedding dimensions, forcing the model to infer semantic structure over trivial pixel variations.📐 Architecture Design & Data Flow                 [ Raw Local Video Input: [B, C, T, H, W] ]
+                                     │
+                                     ▼
+                      [ 3D Conv Tubelet Tokenizer ]
+                                     │
+                     ┌───────────────┴───────────────┐
+                     │ + 3D Spatio-Temporal Pos Embed│
+                     ▼                               ▼
+         [ 25% Visible Context ]          [ 75% Masked Targets ]
+                     │                               │
+                     ▼                               ▼
+           [ Context Encoder ]              [ Target Encoder ] (EMA, Frozen Grad)
+              (Trainable)                            │
+                     │                               ▼
+                     ▼                       [ True Latent Targets ]
+        [ Context Embeddings ]                       │
+                     │                               │
+                     └───────────────┬───────────────┘
+                                     ▼
+                       [ Reconstruction Buffer ]
+                        - Context Embeddings
+                        - [Mask] Tokens + Target Pos Embeds
+                                     │
+                                     ▼
+                            [ Transformer Predictor ]
+                                     │
+                                     ▼
+                       [ Predicted Latent Targets ]
+                                     │
+                                     └───────────────┐
+                                                     ▼
+                                            [ Smooth L1 Loss ] ◄── (No Pixels!)
